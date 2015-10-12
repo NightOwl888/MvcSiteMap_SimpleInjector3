@@ -6,7 +6,6 @@ using System.Reflection;
 using System.Web.Hosting;
 using System.Web.Mvc;
 using SimpleInjector;
-using SimpleInjector.Extensions;
 using MvcSiteMapProvider;
 using MvcSiteMapProvider.Builder;
 using MvcSiteMapProvider.Caching;
@@ -37,8 +36,8 @@ namespace MvcSiteMap_SimpleInjector3.DI.SimpleInjector
             string[] includeAssembliesForScan = new string[] { "MvcSiteMap_SimpleInjector3" };
 
 
-// Extension to allow resolution of arrays by GetAllInstances (natively based on IEnumerable).
-// source from: https://simpleinjector.codeplex.com/wikipage?title=CollectionRegistrationExtensions
+            // Extension to allow resolution of arrays by GetAllInstances (natively based on IEnumerable).
+            // source from: https://simpleinjector.codeplex.com/wikipage?title=CollectionRegistrationExtensions
             AllowToResolveArraysAndLists(container);
 
             var currentAssembly = typeof(MvcSiteMapProviderContainerInitializer).Assembly;
@@ -67,74 +66,80 @@ namespace MvcSiteMap_SimpleInjector3.DI.SimpleInjector
                 typeof(IDynamicNodeProvider)
             };
 
-// Matching type name (I[TypeName] = [TypeName]) or matching type name + suffix Adapter (I[TypeName] = [TypeName]Adapter)
-// and not decorated with the [ExcludeFromAutoRegistrationAttribute].
+            // Matching type name (I[TypeName] = [TypeName]) or matching type name + suffix Adapter (I[TypeName] = [TypeName]Adapter)
+            // and not decorated with the [ExcludeFromAutoRegistrationAttribute].
             CommonConventions.RegisterDefaultConventions(
-                (interfaceType, implementationType) => container.RegisterSingle(interfaceType, implementationType),
+                (interfaceType, implementationType) => container.Register(interfaceType, implementationType),
                 new Assembly[] { siteMapProviderAssembly },
                 allAssemblies,
                 excludeTypes,
                 string.Empty);
 
-// Multiple implementations of strategy based extension points (and not decorated with [ExcludeFromAutoRegistrationAttribute]).
+            // Multiple implementations of strategy based extension points (and not decorated with [ExcludeFromAutoRegistrationAttribute]).
             CommonConventions.RegisterAllImplementationsOfInterfaceSingle(
-                (interfaceType, implementationTypes) => container.RegisterAll(interfaceType, implementationTypes),
+                (interfaceType, implementationTypes) => container.RegisterCollection(interfaceType, implementationTypes),
                 multipleImplementationTypes,
                 allAssemblies,
                 excludeTypes,
                 string.Empty);
 
-            container.Register<XmlSiteMapController>();
+            container.RegisterMvcController<XmlSiteMapController>();
 
-// Visibility Providers
-            container.RegisterSingle<ISiteMapNodeVisibilityProviderStrategy>(() =>
+            // Visibility Providers
+            container.Register<ISiteMapNodeVisibilityProviderStrategy>(() =>
                 new SiteMapNodeVisibilityProviderStrategy(
-                    container.GetAllInstances<ISiteMapNodeVisibilityProvider>().ToArray(), string.Empty));
+                    container.GetAllInstances<ISiteMapNodeVisibilityProvider>().ToArray(), string.Empty),
+                Lifestyle.Singleton);
 
-// Pass in the global controllerBuilder reference
-            container.RegisterSingle<ControllerBuilder>(() => ControllerBuilder.Current);
+            // Pass in the global controllerBuilder reference
+            container.Register<ControllerBuilder>(() => ControllerBuilder.Current, Lifestyle.Singleton);
 
-            container.RegisterSingle<IControllerTypeResolverFactory>(() =>
+            container.Register<IControllerTypeResolverFactory>(() =>
                 new ControllerTypeResolverFactory(
                     new string[0],
                     container.GetInstance<IControllerBuilder>(),
-                    container.GetInstance<IBuildManager>()));
+                    container.GetInstance<IBuildManager>()),
+                Lifestyle.Singleton);
 
-// Configure Security
-            container.RegisterAll<IAclModule>(typeof(AuthorizeAttributeAclModule), typeof(XmlRolesAclModule));
-            container.RegisterSingle<IAclModule>(() => new CompositeAclModule(container.GetAllInstances<IAclModule>().ToArray()));
+            // Configure Security
+            container.RegisterCollection(typeof(IAclModule), new Type[] { typeof(AuthorizeAttributeAclModule), typeof(XmlRolesAclModule) });
+            container.Register<IAclModule>(() => new CompositeAclModule(container.GetAllInstances<IAclModule>().ToArray()), Lifestyle.Singleton);
 
-// Setup cache
-
-
+            // Setup cache
 
 
-            container.RegisterSingle<System.Runtime.Caching.ObjectCache>(() => System.Runtime.Caching.MemoryCache.Default);
-            container.RegisterSingleOpenGeneric(typeof(ICacheProvider<>), typeof(RuntimeCacheProvider<>));
-            container.RegisterSingle<ICacheDependency>(() => new RuntimeFileCacheDependency(absoluteFileName));
 
-            container.RegisterSingle<ICacheDetails>(() => new CacheDetails(absoluteCacheExpiration, TimeSpan.MinValue, container.GetInstance<ICacheDependency>()));
 
-// Configure the visitors
-            container.RegisterSingle<ISiteMapNodeVisitor, UrlResolvingSiteMapNodeVisitor>();
+            container.Register<System.Runtime.Caching.ObjectCache>(() => System.Runtime.Caching.MemoryCache.Default, Lifestyle.Singleton);
+            container.RegisterOpenGeneric(typeof(ICacheProvider<>), typeof(RuntimeCacheProvider<>), Lifestyle.Singleton);
+            container.Register<ICacheDependency>(() => new RuntimeFileCacheDependency(absoluteFileName), Lifestyle.Singleton);
 
-// Prepare for the sitemap node providers
-            container.RegisterSingle<IReservedAttributeNameProvider>(() => new ReservedAttributeNameProvider(new string[0]));
-            container.RegisterSingle<IXmlSource>(() => new FileXmlSource(absoluteFileName));
+            container.Register<ICacheDetails>(() => new CacheDetails(absoluteCacheExpiration, TimeSpan.MinValue, container.GetInstance<ICacheDependency>()), Lifestyle.Singleton);
 
-// Register the sitemap node providers
-            container.RegisterSingle<XmlSiteMapNodeProvider>(() => container.GetInstance<XmlSiteMapNodeProviderFactory>()
-                .Create(container.GetInstance<IXmlSource>()));
-            container.RegisterSingle<ReflectionSiteMapNodeProvider>(() => container.GetInstance<ReflectionSiteMapNodeProviderFactory>()
-                .Create(includeAssembliesForScan));
+            // Configure the visitors
+            container.Register<ISiteMapNodeVisitor, UrlResolvingSiteMapNodeVisitor>(Lifestyle.Singleton);
 
-// Register the sitemap builders
-            container.RegisterSingle<ISiteMapBuilder>(() => container.GetInstance<SiteMapBuilderFactory>()
-                .Create(new CompositeSiteMapNodeProvider(container.GetInstance<XmlSiteMapNodeProvider>(), container.GetInstance<ReflectionSiteMapNodeProvider>())));
+            // Prepare for the sitemap node providers
+            container.Register<IReservedAttributeNameProvider>(() => new ReservedAttributeNameProvider(new string[0]), Lifestyle.Singleton);
+            container.Register<IXmlSource>(() => new FileXmlSource(absoluteFileName), Lifestyle.Singleton);
 
-            container.RegisterAll<ISiteMapBuilderSet>(
+            // Register the sitemap node providers
+            container.Register<XmlSiteMapNodeProvider>(() => container.GetInstance<XmlSiteMapNodeProviderFactory>()
+                .Create(container.GetInstance<IXmlSource>()),
+                Lifestyle.Singleton);
+            container.Register<ReflectionSiteMapNodeProvider>(() => container.GetInstance<ReflectionSiteMapNodeProviderFactory>()
+                .Create(includeAssembliesForScan),
+                Lifestyle.Singleton);
+
+            // Register the sitemap builders
+            container.Register<ISiteMapBuilder>(() => container.GetInstance<SiteMapBuilderFactory>()
+                .Create(new CompositeSiteMapNodeProvider(container.GetInstance<XmlSiteMapNodeProvider>(), container.GetInstance<ReflectionSiteMapNodeProvider>())),
+                Lifestyle.Singleton);
+
+            container.RegisterCollection<ISiteMapBuilderSet>(
                 ResolveISiteMapBuilderSets(container, securityTrimmingEnabled, enableLocalization, visibilityAffectsDescendants, useTitleIfDescriptionNotProvided));
-            container.RegisterSingle<ISiteMapBuilderSetStrategy>(() => new SiteMapBuilderSetStrategy(container.GetAllInstances<ISiteMapBuilderSet>().ToArray()));
+            container.Register<ISiteMapBuilderSetStrategy>(() => new SiteMapBuilderSetStrategy(container.GetAllInstances<ISiteMapBuilderSet>().ToArray()),
+                Lifestyle.Singleton);
         }
 
         private static IEnumerable<ISiteMapBuilderSet> ResolveISiteMapBuilderSets(
@@ -179,6 +184,101 @@ namespace MvcSiteMap_SimpleInjector3.DI.SimpleInjector
                 .MakeGenericMethod(elementType);
             var arrayExpression = Expression.Call(arrayMethod, enumerableExpression);
             e.Register(arrayExpression);
+        }
+    }
+
+    public static class ContainerExtensions
+    {
+        // Extension methods for cross-version support of Simple Injector 2.x and 3.x.
+
+        // This will succeed on 2.x and will be bypassed on 3.x
+        public static void RegisterCollection(this Container container, Type serviceType, IEnumerable<Type> serviceTypes)
+        {
+            // container.RegisterAll(serviceType, serviceTypes);
+            var registerAllMethod = container.GetType().GetMethod(
+                "RegisterAll", 
+                BindingFlags.Instance | BindingFlags.Public, 
+                null, 
+                new Type[] { typeof(Type), typeof(IEnumerable<Type>) }, 
+                null);
+
+            if (registerAllMethod != null)
+            {
+                registerAllMethod.Invoke(container, new object[] { serviceType, serviceTypes });
+            }
+        }
+
+        // This will succeed on 2.x and will be bypassed on 3.x
+        public static void RegisterCollection<TService>(this Container container, IEnumerable<TService> containerUncontrolledCollection) where TService : class
+        {
+            // container.RegisterAll(containerUncontrolledCollection);
+            var registerAllMethod = container.GetType().GetMethods()
+                .Where(mi => mi.Name == "RegisterAll")
+                .Select(mi => new { M = mi, P = mi.GetParameters(), A = mi.GetGenericArguments() })
+                .Where(x => x.A.Length == 1
+                    && x.P.Length == 1
+                    && x.P[0].Name == "collection")
+                .Select(x => x.M)
+                .FirstOrDefault();
+
+            if (registerAllMethod != null)
+            {
+                var genericRegisterAllMethod = registerAllMethod.MakeGenericMethod(new Type[] { typeof(TService) });
+                genericRegisterAllMethod.Invoke(container, new object[] { containerUncontrolledCollection });
+            }
+        }
+
+        // This will work on both 2.x and 3.x. On 2.x this will override the default implementation because it is in the same namespace as the caller.
+        public static void RegisterOpenGeneric(this Container container, Type openGenericServiceType, Type openGenericImplementation, Lifestyle lifestyle)
+        {
+            bool isSimpleInjector2 = false;
+            var openGenericExtensionType = container.GetType().Assembly.GetType("SimpleInjector.Extensions.OpenGenericRegistrationExtensions");
+            if (openGenericExtensionType != null)
+            {
+                // Attempt to find the method to invoke
+                // OpenGenericRegistrationExtensions.RegisterOpenGeneric(container, openGenericServiceType, openGenericImplementation, lifestyle);
+                var method = openGenericExtensionType.GetMethod(
+                    "RegisterOpenGeneric", 
+                    BindingFlags.Static | BindingFlags.Public, 
+                    null, 
+                    new Type[] { typeof(Container), typeof(Type), typeof(Type), typeof(Lifestyle) }, 
+                    null);
+                if (method != null)
+                {
+                    // This is SimpleInjector 2 - Invoke the method
+                    isSimpleInjector2 = true;
+                    method.Invoke(null, new object[] { container, openGenericServiceType, openGenericImplementation, lifestyle });
+                }
+            }
+
+            if (!isSimpleInjector2)
+            {
+                container.Register(openGenericServiceType, openGenericImplementation, lifestyle);
+            }
+        }
+
+        public static void RegisterMvcController<TService>(this Container container)
+        {
+            var registration = Lifestyle.Transient.CreateRegistration(typeof(IController), typeof(TService), container);
+            container.AddRegistration(typeof(TService), registration);
+
+            // This will run if using SimpleInjector 3.x
+            Type diagnosticTypeType = container.GetType().Assembly.GetType("SimpleInjector.Diagnostics.DiagnosticType");
+            if (diagnosticTypeType != null)
+            {
+                var suppressDiagnosticWarningMethod = registration.GetType().GetMethod(
+                    "SuppressDiagnosticWarning",
+                    BindingFlags.Instance | BindingFlags.Public,
+                    null,
+                    new Type[] { diagnosticTypeType, typeof(string) },
+                    null);
+
+                object disposableTransientComponent = Enum.Parse(diagnosticTypeType, "DisposableTransientComponent", true);
+
+                suppressDiagnosticWarningMethod.Invoke(registration, new object[] { 
+                    disposableTransientComponent, 
+                    "MVC's DefaultControllerFactory disposes the controller when the web request ends." });
+            }
         }
     }
 }
